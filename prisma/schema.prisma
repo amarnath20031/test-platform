@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Institute {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  batches  Batch[]
+  students Student[]
+  tests    Test[]
+}
+
+model Batch {
+  id          String   @id @default(cuid())
+  name        String
+  instituteId String
+  createdAt   DateTime @default(now())
+
+  institute Institute @relation(fields: [instituteId], references: [id])
+  students  Student[]
+}
+
+model Student {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?
+  instituteId String
+  batchId      String?
+
+  institute Institute @relation(fields: [instituteId], references: [id])
+  batch      Batch?    @relation(fields: [batchId], references: [id])
+
+  attempts Attempt[]
+}
+
+model Test {
+  id          String   @id @default(cuid())
+  title       String
+  instituteId String
+  createdAt   DateTime @default(now())
+
+  institute Institute @relation(fields: [instituteId], references: [id])
+
+  questions Question[]
+  attempts  Attempt[]
+}
+
+model Question {
+  id      String @id @default(cuid())
+  text    String
+  testId  String
+
+  test    Test     @relation(fields: [testId], references: [id])
+  options Option[]
+}
+
+model Option {
+  id         String  @id @default(cuid())
+  text       String
+  isCorrect  Boolean @default(false)
+  questionId String
+
+  question Question @relation(fields: [questionId], references: [id])
+}
+
+model Attempt {
+  id        String   @id @default(cuid())
+  studentId String
+  testId    String
+  score     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+  test    Test    @relation(fields: [testId], references: [id])
+}
