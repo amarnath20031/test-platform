@@ -279,7 +279,7 @@ export default function AIImportPage() {
         >
 
           <div className="text-8xl">
-            🤖
+            📗
           </div>
 
           <h2 className="text-3xl font-bold mt-8">
@@ -439,7 +439,7 @@ export default function AIImportPage() {
 
             {loading
               ? "Processing..."
-              : "💾 Save All AI Questions"}
+              : "💾 Save All Questions"}
 
           </button>
 
