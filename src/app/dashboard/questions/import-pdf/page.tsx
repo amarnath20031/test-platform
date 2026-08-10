@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import * as XLSX from "xlsx";
 
 type Question = {
   section: string;
@@ -16,7 +15,7 @@ type Question = {
   explanation: string;
 };
 
-export default function ImportExcelPage() {
+export default function AIImportPage() {
   const [file, setFile] = useState<File | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [tests, setTests] = useState<any[]>([]);
@@ -41,152 +40,114 @@ export default function ImportExcelPage() {
     setTests(data || []);
   }
 
-  async function handleExcel(file: File) {
+  async function handlePDF(selectedFile: File) {
     try {
       setLoading(true);
-      setFile(file);
+      setFile(selectedFile);
 
-      const buffer = await file.arrayBuffer();
+      const formData = new FormData();
+      formData.append("file", selectedFile);
 
-      const workbook = XLSX.read(buffer, {
-        type: "array",
-      });
-
-      const sheetName = workbook.SheetNames[0];
-
-      if (!sheetName) {
-        alert("Excel file has no sheets.");
-        return;
-      }
-
-      const sheet = workbook.Sheets[sheetName];
-
-      const rows = XLSX.utils.sheet_to_json<any>(
-        sheet,
+      const response = await fetch(
+        "/api/questions/upload-pdf",
         {
-          defval: "",
+          method: "POST",
+          body: formData,
         }
       );
 
-      console.log("Excel rows:", rows);
+      const data = await response.json();
 
-      if (!rows.length) {
-        alert("Excel file is empty.");
+      console.log("AI import response:", data);
+
+      if (!response.ok || !data.success) {
+        alert(
+          data.error ||
+            "Failed to process PDF."
+        );
         return;
       }
 
-      const extracted: Question[] = rows.map(
-        (row: any, index: number) => {
-          const question: Question = {
-            section: String(
-              row.section ??
-                row.Section ??
-                ""
-            ).trim(),
+      let extracted: Question[];
 
-            topic: String(
-              row.topic ??
-                row.Topic ??
-                ""
-            ).trim(),
+      try {
+        extracted =
+          typeof data.questions === "string"
+            ? JSON.parse(data.questions)
+            : data.questions;
+      } catch (error) {
+        console.error(
+          "Failed to parse Gemini response:",
+          data.questions
+        );
 
-            question: String(
-              row.question ??
-                row.Question ??
-                ""
-            ).trim(),
+        alert(
+          "AI returned invalid JSON. Check the browser console."
+        );
 
-            optionA: String(
-              row.optionA ??
-                row.OptionA ??
-                row["Option A"] ??
-                ""
-            ).trim(),
+        return;
+      }
 
-            optionB: String(
-              row.optionB ??
-                row.OptionB ??
-                row["Option B"] ??
-                ""
-            ).trim(),
-
-            optionC: String(
-              row.optionC ??
-                row.OptionC ??
-                row["Option C"] ??
-                ""
-            ).trim(),
-
-            optionD: String(
-              row.optionD ??
-                row.OptionD ??
-                row["Option D"] ??
-                ""
-            ).trim(),
-
-            correctAnswer: String(
-              row.correctAnswer ??
-                row.CorrectAnswer ??
-                row["Correct Answer"] ??
-                ""
-            )
-              .trim()
-              .toUpperCase(),
-
-            explanation: String(
-              row.explanation ??
-                row.Explanation ??
-                ""
-            ).trim(),
-          };
-
-          if (!question.question) {
-            console.warn(
-              `Row ${index + 2} has no question`
-            );
-          }
-
-          return question;
-        }
-      );
+      if (!Array.isArray(extracted)) {
+        alert(
+          "AI did not return a valid question list."
+        );
+        return;
+      }
 
       const validQuestions = extracted.filter(
-        (q) =>
+        (q: Question) =>
           q.question &&
           q.optionA &&
           q.optionB &&
           q.optionC &&
           q.optionD &&
           ["A", "B", "C", "D"].includes(
-            q.correctAnswer
+            String(q.correctAnswer)
+              .trim()
+              .toUpperCase()
           )
-      );
-
-      console.log(
-        "Valid questions:",
-        validQuestions
       );
 
       if (!validQuestions.length) {
         alert(
-          "No valid questions found. Check your Excel column names."
+          "No valid questions were extracted from the PDF."
         );
         return;
       }
 
-      setQuestions(validQuestions);
+      const normalizedQuestions =
+        validQuestions.map((q) => ({
+          section: String(q.section || "").trim(),
+          topic: String(q.topic || "").trim(),
+          question: String(q.question || "").trim(),
+          optionA: String(q.optionA || "").trim(),
+          optionB: String(q.optionB || "").trim(),
+          optionC: String(q.optionC || "").trim(),
+          optionD: String(q.optionD || "").trim(),
+          correctAnswer: String(
+            q.correctAnswer || ""
+          )
+            .trim()
+            .toUpperCase(),
+          explanation: String(
+            q.explanation || ""
+          ).trim(),
+        }));
+
+      setQuestions(normalizedQuestions);
 
       alert(
-        `${validQuestions.length} questions imported from Excel.`
+        `${normalizedQuestions.length} questions extracted successfully!`
       );
     } catch (error) {
       console.error(
-        "Excel import error:",
+        "AI PDF import error:",
         error
       );
 
       alert(
-        "Failed to read Excel file."
+        "Failed to process PDF."
       );
     } finally {
       setLoading(false);
@@ -211,12 +172,9 @@ export default function ImportExcelPage() {
         "/api/questions/save",
         {
           method: "POST",
-
           headers: {
-            "Content-Type":
-              "application/json",
+            "Content-Type": "application/json",
           },
-
           body: JSON.stringify({
             testId: selectedTest,
             questions,
@@ -227,7 +185,7 @@ export default function ImportExcelPage() {
       const data = await response.json();
 
       console.log(
-        "Save response:",
+        "Save AI questions response:",
         data
       );
 
@@ -236,7 +194,6 @@ export default function ImportExcelPage() {
           data.error ||
             "Failed to save questions."
         );
-
         return;
       }
 
@@ -248,7 +205,7 @@ export default function ImportExcelPage() {
       setFile(null);
     } catch (error) {
       console.error(
-        "Save error:",
+        "Save questions error:",
         error
       );
 
@@ -262,13 +219,17 @@ export default function ImportExcelPage() {
 
   return (
     <div className="min-h-screen p-10 text-white">
+
       <h1 className="text-4xl font-bold mb-10">
-        📥 Excel Question Import
+        🤖 AI Question Import
       </h1>
 
       <div className="rounded-3xl bg-slate-900 border border-slate-700 p-10">
 
+        {/* SELECT TEST */}
+
         <div className="mb-8">
+
           <label className="block text-white font-bold mb-3">
             Select Test
           </label>
@@ -276,12 +237,11 @@ export default function ImportExcelPage() {
           <select
             value={selectedTest}
             onChange={(e) =>
-              setSelectedTest(
-                e.target.value
-              )
+              setSelectedTest(e.target.value)
             }
             className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white"
           >
+
             <option value="">
               Select Test
             </option>
@@ -294,8 +254,12 @@ export default function ImportExcelPage() {
                 {test.title}
               </option>
             ))}
+
           </select>
+
         </div>
+
+        {/* PDF UPLOAD */}
 
         <label
           className="
@@ -309,65 +273,84 @@ export default function ImportExcelPage() {
             items-center
             justify-center
             cursor-pointer
-            hover:border-green-500
+            hover:border-purple-500
             transition
           "
         >
+
           <div className="text-8xl">
-            📊
+            🤖
           </div>
 
           <h2 className="text-3xl font-bold mt-8">
-            Upload Excel
+            Upload Question PDF
           </h2>
 
           <p className="text-slate-400 mt-3">
-            Upload .xlsx or .xls question file
+            AI will extract questions, options,
+            answers and topics
           </p>
 
           <input
             hidden
             type="file"
-            accept=".xlsx,.xls"
+            accept=".pdf,application/pdf"
+            disabled={loading}
             onChange={(e) => {
+
               const selected =
                 e.target.files?.[0];
 
               if (selected) {
-                handleExcel(selected);
+                handlePDF(selected);
               }
+
             }}
           />
+
         </label>
 
         {file && (
           <div className="mt-8 rounded-2xl bg-slate-800 p-6">
+
             <h3 className="font-bold text-xl">
               Selected File
             </h3>
 
-            <p className="text-green-400 mt-3">
+            <p className="text-purple-400 mt-3">
               {file.name}
             </p>
+
           </div>
         )}
 
       </div>
 
+      {/* EXTRACTED QUESTIONS */}
+
       {questions.length > 0 && (
         <div className="mt-10">
 
           <h2 className="text-3xl font-bold mb-6">
-            Questions ({questions.length})
+            AI Extracted Questions ({questions.length})
           </h2>
 
           <div className="space-y-5">
+
             {questions.map(
               (q, index) => (
+
                 <div
                   key={index}
-                  className="bg-slate-900 border border-slate-700 rounded-xl p-6"
+                  className="
+                    bg-slate-900
+                    border
+                    border-slate-700
+                    rounded-xl
+                    p-6
+                  "
                 >
+
                   <div className="flex gap-3 mb-4">
 
                     {q.section && (
@@ -393,6 +376,7 @@ export default function ImportExcelPage() {
                   </p>
 
                   <div className="space-y-2 text-slate-300">
+
                     <div>
                       A. {q.optionA}
                     </div>
@@ -408,24 +392,35 @@ export default function ImportExcelPage() {
                     <div>
                       D. {q.optionD}
                     </div>
+
                   </div>
 
                   <div className="mt-4 text-green-400 font-bold">
-                    Answer:{" "}
-                    {q.correctAnswer}
+                    Answer: {q.correctAnswer}
                   </div>
+
+                  {q.explanation && (
+                    <div className="mt-3 text-slate-400">
+                      Explanation: {q.explanation}
+                    </div>
+                  )}
+
                 </div>
+
               )
             )}
+
           </div>
+
+          {/* SAVE */}
 
           <button
             onClick={saveQuestions}
             disabled={loading}
             className="
               mt-10
-              bg-green-600
-              hover:bg-green-700
+              bg-purple-600
+              hover:bg-purple-700
               disabled:opacity-50
               px-10
               py-5
@@ -435,13 +430,16 @@ export default function ImportExcelPage() {
               text-xl
             "
           >
+
             {loading
-              ? "Saving..."
-              : "💾 Save All Questions"}
+              ? "Processing..."
+              : "💾 Save All AI Questions"}
+
           </button>
 
         </div>
       )}
+
     </div>
   );
 }
