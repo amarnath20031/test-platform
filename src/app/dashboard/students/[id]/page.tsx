@@ -79,6 +79,9 @@ export default function StudentHistoryPage() {
       score: attempt.score || 0,
     })
   );
+  console.log("Attempts:", attempts);
+console.log("Chart Data:", chartData);
+console.log("Length:", attempts.length);
 
   const subjectData = Object.values(
     attempts.reduce(
@@ -113,113 +116,232 @@ export default function StudentHistoryPage() {
     ),
   }));
 
+  const sortedSubjects =
+  [...subjectData].sort(
+    (a: any, b: any) =>
+      b.percentage - a.percentage
+  );
+
+const strongSubject =
+  sortedSubjects[0];
+
+const weakSubject =
+  sortedSubjects[
+    sortedSubjects.length - 1
+  ];
+
+  const totalTests = attempts.length;
+
+const averagePercentage =
+  totalTests > 0
+    ? (
+        attempts.reduce(
+          (sum, a) =>
+            sum + (a.percentage || 0),
+          0
+        ) / totalTests
+      ).toFixed(2)
+    : "0";
+
+const bestScore =
+  totalTests > 0
+    ? Math.max(
+        ...attempts.map(
+          (a) => a.score || 0
+        )
+      )
+    : 0;
+
+const bestPercentage =
+  totalTests > 0
+    ? Math.max(
+        ...attempts.map(
+          (a) =>
+            a.percentage || 0
+        )
+      ).toFixed(2)
+    : "0";
+
+
   return (
     <div className="p-8 text-white">
       <h1 className="text-4xl font-bold mb-2">
         {student?.name}
       </h1>
+      <div className="grid md:grid-cols-4 gap-4 mb-8 mt-6">
+  <div className="bg-gray-900 border border-gray-700 rounded-xl p-6">
+    <p className="text-gray-400 text-sm">
+      Tests Taken
+    </p>
 
-      {/* Performance Trend */}
-      <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 mb-8">
+    <p className="text-3xl font-bold mt-2">
+      {totalTests}
+    </p>
+  </div>
+
+  <div className="bg-gray-900 border border-gray-700 rounded-xl p-6">
+    <p className="text-gray-400 text-sm">
+      Average %
+    </p>
+
+    <p className="text-3xl font-bold text-yellow-400 mt-2">
+      {averagePercentage}%
+    </p>
+  </div>
+
+  <div className="bg-gray-900 border border-gray-700 rounded-xl p-6">
+    <p className="text-gray-400 text-sm">
+      Best Score
+    </p>
+
+    <p className="text-3xl font-bold text-green-400 mt-2">
+      {bestScore}
+    </p>
+  </div>
+
+  <div className="bg-gray-900 border border-gray-700 rounded-xl p-6">
+    <p className="text-gray-400 text-sm">
+      Best %
+    </p>
+
+    <p className="text-3xl font-bold text-blue-400 mt-2">
+      {bestPercentage}%
+    </p>
+  </div>
+</div>
+
+<div className="grid md:grid-cols-2 gap-4 mb-8">
+  <div className="bg-gray-900 border border-green-500/30 rounded-xl p-6">
+    <p className="text-green-400 text-sm">
+      Strong Subject
+    </p>
+
+    <h2 className="text-2xl font-bold mt-2">
+      {strongSubject?.subject || "-"}
+    </h2>
+
+    <p className="text-gray-400 mt-2">
+      {strongSubject?.percentage || 0}%
+    </p>
+  </div>
+
+  <div className="bg-gray-900 border border-red-500/30 rounded-xl p-6">
+    <p className="text-red-400 text-sm">
+      Weak Subject
+    </p>
+
+    <h2 className="text-2xl font-bold mt-2">
+      {weakSubject?.subject || "-"}
+    </h2>
+
+    <p className="text-gray-400 mt-2">
+      {weakSubject?.percentage || 0}%
+    </p>
+  </div>
+</div>
+
+{/* Performance Trend */}
+<div className="bg-gray-900 border border-gray-700 rounded-xl p-6 mb-8">
         <h2 className="text-2xl font-bold mb-6">
           Performance Trend
         </h2>
 
-        <div
-          style={{
-            width: "100%",
-            height: 250,
+       <div className="overflow-x-auto">
+  <div
+  style={{
+    width:
+      chartData.length <= 12
+        ? "100%"
+        : `${chartData.length * 120}px`,
+    height: 300,
+  }}
+>
+    <ResponsiveContainer
+      width="100%"
+      height="100%"
+    >
+      <LineChart
+        data={chartData}
+        margin={{
+          top: 30,
+          right: 80,
+          left: 20,
+          bottom: 20,
+        }}
+      >
+        <CartesianGrid stroke="#374151" />
+
+        <XAxis
+          dataKey="test"
+          interval={0}
+          minTickGap={20}
+        />
+
+        <YAxis
+  domain={[0, 100]}
+  ticks={[0, 25, 50, 75, 100]}
+/>
+
+        <Tooltip
+          formatter={(value) => [
+            `${value}%`,
+            "Percentage",
+          ]}
+          contentStyle={{
+            backgroundColor: "#0f172a",
+            border:
+              "1px solid #1e293b",
+            borderRadius: "12px",
+            color: "#fff",
           }}
-        >
-          <ResponsiveContainer>
-            <LineChart data={chartData}>
-              <CartesianGrid stroke="#374151" />
+          labelStyle={{
+            color: "#94a3b8",
+          }}
+        />
 
-              <XAxis dataKey="test" />
+        <Line
+          type="monotone"
+          dataKey="percentage"
+          stroke="#10b981"
+          strokeWidth={4}
+          dot={(props) => {
+            const {
+              cx,
+              cy,
+              payload,
+            } = props;
 
-              <YAxis
-                domain={[0, 100]}
+            let fill = "#ef4444";
+
+            if (
+              payload.percentage >= 80
+            )
+              fill = "#10b981";
+            else if (
+              payload.percentage >= 40
+            )
+              fill = "#facc15";
+
+            return (
+              <circle
+                cx={cx}
+                cy={cy}
+                r={6}
+                fill={fill}
+                stroke="#ffffff"
+                strokeWidth={2}
               />
-
-              <Tooltip
-                labelFormatter={(
-                  _,
-                  payload
-                ) =>
-                  payload?.[0]?.payload
-                    ?.date
-                }
-                formatter={(
-                  value
-                ) => [
-                  `${value}%`,
-                  "Percentage",
-                ]}
-                contentStyle={{
-                  backgroundColor:
-                    "#0f172a",
-                  border:
-                    "1px solid #1e293b",
-                  borderRadius:
-                    "12px",
-                  color: "#fff",
-                }}
-                labelStyle={{
-                  color: "#94a3b8",
-                }}
-              />
-
-              <Line
-                type="monotone"
-                dataKey="percentage"
-                stroke="#10b981"
-                strokeWidth={4}
-                dot={(props) => {
-                  const {
-                    cx,
-                    cy,
-                    payload,
-                  } = props;
-
-                  let fill =
-                    "#ef4444";
-
-                  if (
-                    payload.percentage >=
-                    80
-                  )
-                    fill =
-                      "#10b981";
-                  else if (
-                    payload.percentage >=
-                    40
-                  )
-                    fill =
-                      "#facc15";
-
-                  return (
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={6}
-                      fill={fill}
-                      stroke="#ffffff"
-                      strokeWidth={2}
-                    />
-                  );
-                }}
-                activeDot={{
-                  r: 8,
-                }}
-                animationDuration={
-                  1200
-                }
-                animationEasing="ease-out"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+            );
+          }}
+          activeDot={{ r: 8 }}
+          animationDuration={1200}
+          animationEasing="ease-out"
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  </div>
+</div>
+</div>
 
       {/* Subject Performance */}
       <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 mb-8">

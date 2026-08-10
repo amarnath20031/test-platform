@@ -1,0 +1,48 @@
+# Query: .from("Profile"
+# ContextLines: 1
+
+9 results - 8 files
+
+src\app\api\auth\create-student\route.ts:
+  65      const { error: profileError } = await admin
+  66:       .from("profile")
+  67        .insert({
+
+src\app\api\auth\register-institute\route.ts:
+  58      const { error: profileError } =
+  59:       await supabase.from("profile").insert({
+  60          id: userId,
+
+src\app\api\students\create\route.ts:
+  32        await supabase
+  33:         .from("profile")
+  34          .select("*")
+
+  91        await supabase
+  92:         .from("profile")
+  93          .insert({
+
+src\app\dashboard\page.tsx:
+  21        const { data: profile } = await supabase
+  22:         .from("profile")
+  23          .select("role")
+
+src\app\dashboard\institute\page.tsx:
+  50  const { data: profile } = await supabase
+  51:   .from("profile")
+  52    .select("role")
+
+src\app\dashboard\student\page.tsx:
+  26      const { data: profile, error: profileError } = await supabase
+  27:   .from("profile")
+  28    .select("*")
+
+src\app\dashboard\students\new\page.tsx:
+  43      const { data: profile, error: profileError } = await supabase
+  44:       .from("profile")
+  45        .select("instituteId")
+
+src\app\student\page.tsx:
+  26      const { data: profile } = await supabase
+  27:       .from("profile")
+  28        .select("studentId")

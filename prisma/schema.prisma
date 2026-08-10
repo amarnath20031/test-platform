@@ -7,6 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum AttemptEventType {
+  QUESTION_OPENED
+  OPTION_SELECTED
+  ANSWER_CLEARED
+  QUESTION_REVISITED
+  NEXT_QUESTION
+  PREVIOUS_QUESTION
+  TEST_SUBMITTED
+}
+
 model Institute {
   id        String    @id @default(cuid())
   name      String
@@ -27,64 +37,89 @@ model Subject {
 }
 
 model Batch {
-  id          String     @id @default(cuid())
-  name        String
-  instituteId String?
-  createdAt   DateTime?  @default(now()) @db.Timestamptz(6)
-  institute   Institute? @relation(fields: [instituteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  students    Student[]
+  id             String           @id @default(cuid())
+  name           String
+  instituteId    String?
+  createdAt      DateTime?        @default(now()) @db.Timestamptz(6)
+  institute      Institute?       @relation(fields: [instituteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  students       Student[]
+  TestAssignment TestAssignment[]
 }
 
 model Student {
-  id          String     @id @default(cuid())
-  name        String
-  email       String?
-  instituteId String?
-  batchId     String?
-  attempts    Attempt[]
-  batch       Batch?     @relation(fields: [batchId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  institute   Institute? @relation(fields: [instituteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id             String           @id @default(dbgenerated("gen_random_uuid()"))
+  name           String
+  email          String?
+  instituteId    String?
+  batchId        String?
+  attempts       Attempt[]
+  batch          Batch?           @relation(fields: [batchId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  institute      Institute?       @relation(fields: [instituteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  TestAssignment TestAssignment[]
 }
 
 model Test {
-  id          String    @id @default(cuid())
-  title       String
-  instituteId String?
-  createdAt   DateTime? @default(now()) @db.Timestamptz(6)
-  subjectId   String?
+  id              String           @id @default(cuid())
+  title           String
+  instituteId     String?
+  createdAt       DateTime?        @default(now()) @db.Timestamptz(6)
+  subjectId       String?
+  negativeMarks   Float            @default(0)
+  positiveMarks   Float            @default(1)
+  durationHours   Int              @default(0)
+  durationMinutes Int              @default(0)
+  durationSeconds Int              @default(0)
+  attempts        Attempt[]
+  sections Section[]
+  questions       Question[]
+  institute       Institute?       @relation(fields: [instituteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subject         Subject?         @relation(fields: [subjectId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "test_subject_fkey")
+  TestAssignment  TestAssignment[]
+}
 
-  positiveMarks Float @default(1)
-  negativeMarks Float @default(0)
+model Section {
+  id        String @id @default(cuid())
+  name      String
+  order     Int
+  testId    String
 
-  durationHours   Int @default(0)
-  durationMinutes Int @default(0)
-  durationSeconds Int @default(0)
+  test Test @relation(fields: [testId], references: [id], onDelete: Cascade)
 
-  attempts  Attempt[]
   questions Question[]
-
-  institute Institute? @relation(fields: [instituteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  subject   Subject?   @relation(fields: [subjectId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "test_subject_fkey")
 }
 
 model Question {
-  id          String   @id @default(cuid())
+  id          String         @id @default(cuid())
   text        String
   testId      String?
-  marks       Int?     @default(1)
+  marks       Int?           @default(1)
   explanation String?
+  subjectId   String?
+  topic       String?
+  difficulty  String?
+  imageUrl    String?
+  createdAt   DateTime?      @default(now()) @db.Timestamptz(6)
+
   Answer      Answer[]
   options     Option[]
-  test        Test?    @relation(fields: [testId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  events      AttemptEvent[]
+
+  sectionId   String?
+  section     Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  test        Test? @relation(fields: [testId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model Option {
-  id         String    @id @default(cuid())
+  id         String         @id @default(cuid())
   text       String
-  isCorrect  Boolean?  @default(false)
+  isCorrect  Boolean?       @default(false)
   questionId String?
+  is_correct Boolean?       @default(false)
   Answer     Answer[]
-  question   Question? @relation(fields: [questionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  events     AttemptEvent[]
+
+  question Question? @relation(fields: [questionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model Attempt {
@@ -93,29 +128,114 @@ model Attempt {
   testId    String?
   score     Float?  @default(0)
 
-  correctAnswers Int   @default(0)
-  wrongAnswers   Int   @default(0)
-  skippedAnswers Int   @default(0)
-  timeTaken      Int   @default(0)
-  percentage     Float @default(0)
+  // false = official institute attempt
+  // true = Practice Again attempt
+  isPractice Boolean @default(false)
 
-  rank Int?
-
-  createdAt DateTime? @default(now()) @db.Timestamptz(6)
-
-  Answer  Answer[]
-  student Student? @relation(fields: [studentId], references: [id])
-  test    Test?    @relation(fields: [testId], references: [id])
+  createdAt      DateTime?      @default(now()) @db.Timestamptz(6)
+  timeTaken      Int            @default(0)
+  correctAnswers Int            @default(0)
+  percentage     Float          @default(0)
+  skippedAnswers Int            @default(0)
+  wrongAnswers   Int            @default(0)
+  rank           Int?
+  correct        Int?           @default(0)
+  wrong          Int?           @default(0)
+  skipped        Int?           @default(0)
+  completedAt    DateTime?      @default(now()) @db.Timestamptz(6)
+  Answer         Answer[]
+  student        Student?       @relation(fields: [studentId], references: [id])
+  test           Test?          @relation(fields: [testId], references: [id])
+  events         AttemptEvent[]
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model AttemptEvent {
+  id         String           @id @default(cuid())
+  attemptId  String
+  questionId String?
+  optionId   String?
+  eventType  AttemptEventType
+  createdAt  DateTime         @default(now())
+
+  attempt  Attempt   @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question? @relation(fields: [questionId], references: [id])
+  option   Option?   @relation(fields: [optionId], references: [id])
+}
+
+/// Stores each question response inside a test attempt.
+/// Behavioral fields are used for diagnostic analytics.
 model Answer {
-  id         String    @id
+  id         String  @id
   attemptId  String?
   questionId String?
   optionId   String?
-  isCorrect  Boolean?  @default(false)
-  Attempt    Attempt?  @relation(fields: [attemptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  Option     Option?   @relation(fields: [optionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  Question   Question? @relation(fields: [questionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  // Result
+  isCorrect Boolean? @default(false)
+
+  // Behavioral analytics
+  timeSpent     Int     @default(0)
+  answerChanges Int     @default(0)
+  changedAnswer Boolean @default(false)
+
+  // The first option the student selected.
+  // Useful for detecting answer-changing patterns.
+  initialOptionId String?
+
+  Attempt  Attempt?  @relation(fields: [attemptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Option   Option?   @relation(fields: [optionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Question Question? @relation(fields: [questionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([attemptId])
+  @@index([questionId])
+}
+
+model profile {
+  id          String   @id(map: "Profile_pkey") @db.Uuid
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  email       String?
+  role        String?
+  studentId   String?
+  instituteId String?
+}
+
+model ExamSession {
+  id               String   @id @default(cuid())
+  studentId        String
+  testId           String
+  currentQuestion  Int      @default(0)
+  visitedQuestions Json?
+  markedQuestions  Json?
+  remainingTime    Int
+  startedAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @updatedAt
+
+  @@unique([studentId, testId])
+}
+
+model DraftAnswer {
+  id         String @id
+  studentId  String
+  testId     String
+  questionId String
+  optionId   String
+
+  @@unique([studentId, testId, questionId])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model TestAssignment {
+  id         String    @id
+  testId     String
+  studentId  String?
+  batchId    String?
+  assignedAt DateTime? @default(now()) @db.Timestamptz(6)
+  dueDate    DateTime? @db.Timestamptz(6)
+  status     String?   @default("assigned")
+  attemptId  String?   @db.Uuid
+  Batch      Batch?    @relation(fields: [batchId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Student    Student?  @relation(fields: [studentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  Test       Test      @relation(fields: [testId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([studentId, testId], map: "unique_student_test")
 }

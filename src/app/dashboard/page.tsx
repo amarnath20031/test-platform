@@ -1,8 +1,40 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
+
 export default function DashboardPage() {
-  return (
-    <main className="p-8">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
-      <p className="mt-4">Institute overview will show here.</p>
-    </main>
-  )
+  const router = useRouter();
+
+  useEffect(() => {
+    async function load() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profile")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (profile?.role?.toLowerCase() === "institute") {
+        router.replace("/dashboard/institute");
+      } else if (profile?.role?.toLowerCase() === "student") {
+        router.push("/student");
+      } else {
+        router.replace("/login");
+      }
+    }
+
+    load();
+  }, [router]);
+
+  return <div className="p-10">Loading dashboard...</div>;
 }

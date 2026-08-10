@@ -2,8 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { useParams, useRouter } from "next/navigation";
 
 export default function NewAttemptPage() {
+  const params = useParams();
+  const router = useRouter();
+
+  const testIdFromUrl = params.id as string;
+  const [showSubmitModal, setShowSubmitModal] =useState(false);
   const [submitted, setSubmitted] = useState(false);
   const submittingRef = useRef(false);
 
@@ -12,14 +18,23 @@ export default function NewAttemptPage() {
   const [questions, setQuestions] = useState<any[]>([]);
 
   const [studentId, setStudentId] = useState("");
+  const [currentQuestion, setCurrentQuestion] =
+  useState(0);
+
+const [visitedQuestions, setVisitedQuestions] =
+  useState<string[]>([]);
+  const [markedQuestions, setMarkedQuestions] =
+  useState<string[]>([]);
   const [testId, setTestId] = useState("");
 
   const [timeLeft, setTimeLeft] = useState(0);
   const [initialTime, setInitialTime] = useState(0);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+ useEffect(() => {
+  if (testIdFromUrl && studentId) {
+    loadQuestions(testIdFromUrl);
+  }
+}, [testIdFromUrl, studentId]);
 
   useEffect(() => {
     if (timeLeft <= 0 || submitted) return;
@@ -54,49 +69,122 @@ export default function NewAttemptPage() {
       .select("*")
       .order("title");
 
-    if (studentData) setStudents(studentData);
-    if (testData) setTests(testData);
+   if (studentData) {
+  setStudents(studentData);
+
+  // Temporary: automatically use the first student
+  if (studentData.length > 0) {
+    setStudentId(studentData[0].id);
+  }
+}
+
+if (testData) {
+  setTests(testData);
+  if (testData) {
+  setTests(testData);
+
+  const selected = testData.find(
+    (t) => t.id === testIdFromUrl
+  );
+
+  if (selected) {
+    setTestId(selected.id);
+  }
+}
+}
+    if (testIdFromUrl && testData) {
+  const selectedTest = testData.find(
+    (t) => t.id === testIdFromUrl
+  );
+
+  if (selectedTest) {
+    setTestId(selectedTest.id);
+  }
+}
   }
 
   async function loadQuestions(id: string) {
-    setSubmitted(false);
-    setTestId(id);
+  setSubmitted(false);
+  setTestId(id);
 
-    const selectedTest = tests.find(
-      (t) => t.id === id
+  const { data: session } = await supabase
+  .from("ExamSession")
+  .select("*")
+  .eq("studentId", studentId)
+  .eq("testId", id)
+  .maybeSingle();
+
+  const selectedTest = tests.find(
+    (t) => t.id === id
+  );
+
+  if (selectedTest) {
+
+  const totalSeconds =
+    (selectedTest.durationHours || 0) * 3600 +
+    (selectedTest.durationMinutes || 0) * 60 +
+    (selectedTest.durationSeconds || 0);
+
+  if (session) {
+    setTimeLeft(session.remainingTime);
+    setCurrentQuestion(session.currentQuestion);
+    setVisitedQuestions(session.visitedQuestions || []);
+    setMarkedQuestions(session.markedQuestions || []);
+  } else {
+    setTimeLeft(totalSeconds);
+    setCurrentQuestion(0);
+    setVisitedQuestions([]);
+    setMarkedQuestions([]);
+
+    await supabase
+      .from("ExamSession")
+      .insert({
+        studentId,
+        testId: id,
+        currentQuestion: 0,
+        visitedQuestions: [],
+        markedQuestions: [],
+        remainingTime: totalSeconds,
+      });
+  }
+
+  setInitialTime(totalSeconds);
+}
+
+  // Restore Draft Answers
+  const { data: drafts } = await supabase
+    .from("DraftAnswer")
+    .select("*")
+    .eq("studentId", studentId)
+    .eq("testId", id);
+
+  const { data } = await supabase
+    .from("Question")
+    .select(`
+      *,
+      options:Option(*)
+    `)
+    .eq("testId", id);
+
+  if (data) {
+    setQuestions(
+      data.map((q) => ({
+        ...q,
+        selectedOption:
+          drafts?.find(
+            (d) =>
+              d.questionId === q.id
+          )?.optionId || "",
+      }))
     );
 
-    if (selectedTest) {
-      const totalSeconds =
-        (selectedTest.durationHours || 0) *
-          3600 +
-        (selectedTest.durationMinutes || 0) *
-          60 +
-        (selectedTest.durationSeconds || 0);
+    setCurrentQuestion(0);
 
-      setTimeLeft(totalSeconds);
-      setInitialTime(totalSeconds);
-    }
-
-    const { data } = await supabase
-      .from("Question")
-      .select(
-        `
-        *,
-        options:Option(*)
-      `
-      )
-      .eq("testId", id);
-
-    if (data) {
-      setQuestions(
-        data.map((q) => ({
-          ...q,
-          selectedOption: "",
-        }))
-      );
-    }
+    setVisitedQuestions(
+      data.length ? [data[0].id] : []
+    );
   }
+}
 
   async function submitTest() {
   if (submittingRef.current) return;
@@ -227,30 +315,28 @@ export default function NewAttemptPage() {
         ]);
     }
 
-    alert(
-      `Test Submitted!
+   await supabase
+  .from("DraftAnswer")
+  .delete()
+  .eq("studentId", studentId)
+  .eq("testId", testId);
 
-Score: ${score}
+await supabase
+  .from("ExamSession")
+  .delete()
+  .eq("studentId", studentId)
+  .eq("testId", testId);
 
-Correct: ${correctAnswers}
+  await supabase
+  .from("TestAssignment")
+  .update({
+    status: "completed",
+    attemptId: attemptId,
+  })
+  .eq("studentId", studentId)
+  .eq("testId", testId);
 
-Wrong: ${wrongAnswers}
-
-Skipped: ${skippedAnswers}
-
-Percentage: ${percentage.toFixed(
-        2
-      )}%
-
-Time Taken:
-${Math.floor(timeTaken / 60)}m ${
-        timeTaken % 60
-      }s`
-    );
-
-    setTimeLeft(0);
-setQuestions([]);
-submittingRef.current = true;
+router.push(`/result/${attemptId}`);
   }
 
   const formattedTime =
@@ -297,106 +383,286 @@ submittingRef.current = true;
       )}
 
       <div className="space-y-4">
-        <select
-          className="border p-3 rounded w-full"
-          value={studentId}
-          onChange={(e) =>
-            setStudentId(
-              e.target.value
-            )
+
+        {questions.length > 0 && (
+  <div className="flex gap-6">
+    {/* LEFT SIDE */}
+    <div className="flex-1 border p-6 rounded-xl">
+      <p className="text-xl font-bold mb-6">
+        Question {currentQuestion + 1}
+      </p>
+
+      <p className="text-lg mb-6">
+        {
+          questions[currentQuestion]
+            ?.text
+        }
+      </p>
+
+      {questions[
+        currentQuestion
+      ]?.options.map(
+        (option: any) => (
+          <label
+            key={option.id}
+            className="block mb-4"
+          >
+            <input
+              type="radio"
+              checked={
+                questions[
+                  currentQuestion
+                ]
+                  ?.selectedOption ===
+                option.id
+              }
+             onChange={async () => {
+  // Update UI
+  setQuestions((prev) =>
+    prev.map((q, index) =>
+      index === currentQuestion
+        ? {
+            ...q,
+            selectedOption: option.id,
           }
-        >
-          <option value="">
-            Select Student
-          </option>
+        : q
+    )
+  );
 
-          {students.map((student) => (
-            <option
-              key={student.id}
-              value={student.id}
-            >
-              {student.name}
-            </option>
-          ))}
-        </select>
+  // Save draft
+  await supabase
+    .from("DraftAnswer")
+    .upsert({
+      studentId,
+      testId,
+      questionId: questions[currentQuestion].id,
+      optionId: option.id,
+    });
+}}
+            />
 
-        <select
-          className="border p-3 rounded w-full"
-          value={testId}
-          onChange={(e) =>
-            loadQuestions(
-              e.target.value
-            )
-          }
-        >
-          <option value="">
-            Select Test
-          </option>
+            <span className="ml-3">
+              {option.text}
+            </span>
+          </label>
+        )
+      )}
 
-          {tests.map((test) => (
-            <option
-              key={test.id}
-              value={test.id}
-            >
-              {test.title}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-wrap gap-3 mt-8">
+  <button
+    disabled={currentQuestion === 0}
+    onClick={() =>
+      setCurrentQuestion(currentQuestion - 1)
+    }
+    className="bg-gray-700 text-white px-5 py-3 rounded disabled:opacity-50"
+  >
+    Previous
+  </button>
 
-        {questions.map(
-          (question, index) => (
-            <div
-              key={question.id}
-              className="border p-4 rounded"
-            >
-              <p className="font-bold mb-4">
-                {index + 1}.{" "}
-                {question.text}
-              </p>
+  <button
+    onClick={() => {
+      const q =
+        questions[currentQuestion];
 
-              {question.options.map(
-                (option: any) => (
-                  <label
-                    key={option.id}
-                    className="block mb-2"
-                  >
-                    <input
-                      type="radio"
-                      name={question.id}
-                      value={option.id}
-                      onChange={() => {
-                        setQuestions(
-                          (prev) =>
-                            prev.map(
-                              (q) =>
-                                q.id ===
-                                question.id
-                                  ? {
-                                      ...q,
-                                      selectedOption:
-                                        option.id,
-                                    }
-                                  : q
-                            )
-                        );
-                      }}
-                    />
-
-                    <span className="ml-2">
-                      {option.text}
-                    </span>
-                  </label>
-                )
-              )}
-            </div>
+      if (
+        markedQuestions.includes(q.id)
+      ) {
+        setMarkedQuestions((prev) =>
+          prev.filter(
+            (id) => id !== q.id
           )
-        )}
+        );
+      } else {
+        setMarkedQuestions((prev) => [
+          ...prev,
+          q.id,
+        ]);
+      }
+    }}
+    className="bg-purple-600 text-white px-5 py-3 rounded"
+  >
+    {markedQuestions.includes(
+      questions[currentQuestion].id
+    )
+      ? "Unmark Review"
+      : "Mark for Review"}
+  </button>
+
+  <button
+    onClick={() => {
+      setQuestions((prev) =>
+        prev.map((q, index) =>
+          index === currentQuestion
+            ? {
+                ...q,
+                selectedOption: "",
+              }
+            : q
+        )
+      );
+    }}
+    className="bg-red-600 text-white px-5 py-3 rounded"
+  >
+    Clear Response
+  </button>
+
+  <button
+    disabled={
+      currentQuestion ===
+      questions.length - 1
+    }
+    onClick={() => {
+      const next =
+        currentQuestion + 1;
+
+      if (
+        !visitedQuestions.includes(
+          questions[next].id
+        )
+      ) {
+        setVisitedQuestions((prev) => [
+          ...prev,
+          questions[next].id,
+        ]);
+      }
+
+      setCurrentQuestion(next);
+    }}
+    className="bg-blue-600 text-white px-5 py-3 rounded disabled:opacity-50"
+  >
+    Save & Next
+  </button>
+</div>
+    </div>
+
+    {/* RIGHT SIDE */}
+    <div className="w-72">
+      <div className="bg-gray-900 p-5 rounded-xl sticky top-5">
+       <h2 className="font-bold mb-5">
+  Exam Tools
+</h2>
+
+<div className="space-y-2 text-sm mb-5">
+  <p>
+    Answered: {
+      questions.filter(
+        (q) => q.selectedOption !== ""
+      ).length
+    }
+  </p>
+
+  <p>
+    Not Answered: {
+      visitedQuestions.filter(
+        (id) =>
+          !questions.find(
+            (q) =>
+              q.id === id &&
+              q.selectedOption !== ""
+          )
+      ).length
+    }
+  </p>
+
+  <p>
+    Not Visited: {
+      questions.length -
+      visitedQuestions.length
+    }
+  </p>
+
+  <p>
+    Marked: {
+      markedQuestions.length
+    }
+  </p>
+</div>
+
+
+        <div className="grid grid-cols-4 gap-3">
+          {questions.map(
+            (q, index) => {
+              const answered =
+                q.selectedOption !== "";
+
+              const visited =
+                visitedQuestions.includes(
+                  q.id
+                );
+
+              let color = "bg-gray-500";
+
+const marked =
+  markedQuestions.includes(q.id);
+
+if (answered && marked) {
+  color = "bg-amber-600";
+} else if (marked) {
+  color = "bg-purple-600";
+} else if (answered) {
+  color = "bg-green-500";
+} else if (visited) {
+  color = "bg-red-500";
+}
+
+              return (
+                <button
+                  key={q.id}
+                  onClick={() => {
+                    if (
+                      !visitedQuestions.includes(
+                        q.id
+                      )
+                    ) {
+                      setVisitedQuestions(
+                        (prev) => [
+                          ...prev,
+                          q.id,
+                        ]
+                      );
+                    }
+
+                    setCurrentQuestion(
+                      index
+                    );
+                  }}
+                  className={`${color} h-12 w-12 rounded-lg text-white font-bold`}
+                >
+                  {index + 1}
+                </button>
+              );
+            }
+          )}
+        </div>
+
+        <div className="mt-6 space-y-3 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-green-500 rounded" />
+            Answered
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-red-500 rounded" />
+            Visited
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-gray-500 rounded" />
+            Not Visited
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
         {questions.length >
           0 && (
           <button
             disabled={submitted}
-            onClick={submitTest}
+            onClick={() =>
+  setShowSubmitModal(true)
+}
             className={`px-5 py-3 rounded text-white ${
               submitted
                 ? "bg-gray-500 cursor-not-allowed"
@@ -408,7 +674,65 @@ submittingRef.current = true;
               : "Submit Test"}
           </button>
         )}
+
+        {showSubmitModal && (
+  <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+    <div className="bg-gray-900 p-8 rounded-xl w-112.5 text-white">
+      <h2 className="text-2xl font-bold mb-6">
+        Submit Test?
+      </h2>
+
+      <div className="space-y-3 mb-6">
+        <p>
+          Answered: {
+            questions.filter(
+              (q) =>
+                q.selectedOption !== ""
+            ).length
+          }
+        </p>
+
+        <p>
+          Not Answered: {
+            questions.length -
+            questions.filter(
+              (q) =>
+                q.selectedOption !== ""
+            ).length
+          }
+        </p>
+
+        <p>
+          Marked For Review: {
+            markedQuestions.length
+          }
+        </p>
       </div>
+
+      <div className="flex justify-end gap-4">
+        <button
+          onClick={() =>
+            setShowSubmitModal(false)
+          }
+          className="bg-gray-700 px-5 py-3 rounded"
+        >
+          Cancel
+        </button>
+
+        <button
+          onClick={() => {
+            setShowSubmitModal(true);
+            submitTest();
+          }}
+          className="bg-red-600 px-5 py-3 rounded"
+        >
+          Submit Test
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+ </div>
     </div>
   );
 }

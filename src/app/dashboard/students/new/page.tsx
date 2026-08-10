@@ -2,143 +2,150 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
 
 export default function NewStudentPage() {
-  const router = useRouter();
-
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [instituteId, setInstituteId] = useState("");
-  const [batchId, setBatchId] = useState("");
 
-  const [institutes, setInstitutes] = useState<any[]>([]);
+  const [batchId, setBatchId] = useState("");
   const [batches, setBatches] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    async function loadData() {
-      const { data: instituteData } = await supabase
-        .from("Institute")
-        .select("*")
-        .order("name");
-
-      const { data: batchData } = await supabase
+    async function loadBatches() {
+      const { data, error } = await supabase
         .from("Batch")
         .select("*")
         .order("name");
 
-      if (instituteData) {
-        setInstitutes(instituteData);
-      }
+      console.log("Batches:", data);
+      console.log(error);
 
-      if (batchData) {
-        setBatches(batchData);
+      if (data) {
+        setBatches(data);
       }
     }
 
-    loadData();
+    loadBatches();
   }, []);
 
   async function createStudent() {
-    if (!name || !instituteId) {
-      alert("Please fill required fields.");
+    if (!name || !email || !batchId) {
+      alert("Fill all fields");
       return;
     }
 
     setLoading(true);
 
-    const { error } = await supabase
-      .from("Student")
-      .insert([
-        {
-          id: crypto.randomUUID(),
-          name,
-          email,
-          instituteId,
-          batchId: batchId || null,
-        },
-      ]);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-    setLoading(false);
-
-    if (error) {
-      console.log(error);
-      alert(error.message);
+    if (!user) {
+      setLoading(false);
+      alert("Please login again.");
       return;
     }
 
-    router.push("/dashboard/students");
+    // Get institute id
+    const { data: profile, error: profileError } = await supabase
+      .from("profile")
+      .select("instituteId")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError || !profile?.instituteId) {
+      setLoading(false);
+      alert("Institute profile not found.");
+      return;
+    }
+
+    const response = await fetch("/api/auth/create-student", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+        email,
+        instituteId: profile.instituteId,
+        batchId,
+      }),
+    });
+
+    const result = await response.json();
+
+    setLoading(false);
+
+    if (!response.ok) {
+      alert(result.error);
+      return;
+    }
+
+    alert(
+`Student Created Successfully!
+
+Email:
+${email}
+
+Temporary Password:
+${result.password}`
+    );
+
+    setName("");
+    setEmail("");
+    setBatchId("");
   }
 
   return (
-    <div className="p-8 max-w-xl">
+    <div className="max-w-xl p-8">
+
       <h1 className="text-3xl font-bold mb-6">
         Add Student
       </h1>
 
-      <div className="space-y-4">
-        <input
-          className="border p-3 rounded w-full"
-          placeholder="Student Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
+      <input
+        className="border p-3 rounded w-full mb-4"
+        placeholder="Student Name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
 
-        <input
-          className="border p-3 rounded w-full"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+      <input
+        className="border p-3 rounded w-full mb-4"
+        placeholder="Student Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
 
-        <select
-          className="border p-3 rounded w-full"
-          value={instituteId}
-          onChange={(e) => setInstituteId(e.target.value)}
-        >
-          <option value="">
-            Select Institute
+      <select
+        value={batchId}
+        onChange={(e) => setBatchId(e.target.value)}
+        className="border p-3 rounded w-full mb-6"
+      >
+        <option value="">
+          Select Batch
+        </option>
+
+        {batches.map((batch) => (
+          <option
+            key={batch.id}
+            value={batch.id}
+          >
+            {batch.name}
           </option>
+        ))}
+      </select>
 
-          {institutes.map((institute) => (
-            <option
-              key={institute.id}
-              value={institute.id}
-            >
-              {institute.name}
-            </option>
-          ))}
-        </select>
+      <button
+        onClick={createStudent}
+        disabled={loading}
+        className="bg-black text-white px-5 py-3 rounded"
+      >
+        {loading ? "Creating..." : "Create Student"}
+      </button>
 
-        <select
-          className="border p-3 rounded w-full"
-          value={batchId}
-          onChange={(e) => setBatchId(e.target.value)}
-        >
-          <option value="">
-            Select Batch
-          </option>
-
-          {batches.map((batch) => (
-            <option
-              key={batch.id}
-              value={batch.id}
-            >
-              {batch.name}
-            </option>
-          ))}
-        </select>
-
-        <button
-          onClick={createStudent}
-          disabled={loading}
-          className="bg-black text-white px-5 py-3 rounded"
-        >
-          {loading ? "Saving..." : "Save Student"}
-        </button>
-      </div>
     </div>
   );
 }
