@@ -114,7 +114,7 @@ export default function StudentsPage() {
   <button
     onClick={() =>
       router.push(
-        `/dashboard/students/${student.id}/analytics`
+        `/dashboard/students/${student.id}`
       )
     }
     className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl"

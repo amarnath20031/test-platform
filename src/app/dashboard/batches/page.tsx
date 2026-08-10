@@ -243,12 +243,12 @@ const activeBatches = batches.filter(
     Edit
   </Link>
 
-  <Link
-    href={`/dashboard/batches/${batch.id}/analytics`}
-    className="bg-purple-600 hover:bg-purple-700 px-5 py-2 rounded-lg transition"
-  >
-    Analytics
-  </Link>
+<Link
+  href={`/dashboard/batches/${batch.id}`}
+  className="bg-purple-600 hover:bg-purple-700 px-5 py-2 rounded-lg transition"
+>
+  Analytics
+</Link>
 
   <button
     onClick={() => deleteBatch(batch.id)}
