@@ -6,10 +6,8 @@ import { supabase } from "@/lib/supabase/client";
 export default function NewStudentPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-
   const [batchId, setBatchId] = useState("");
   const [batches, setBatches] = useState<any[]>([]);
-
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -48,7 +46,7 @@ export default function NewStudentPage() {
       return;
     }
 
-    // Get institute id
+    // Get the institute belonging to the currently logged-in institute account
     const { data: profile, error: profileError } = await supabase
       .from("profile")
       .select("instituteId")
@@ -79,12 +77,12 @@ export default function NewStudentPage() {
     setLoading(false);
 
     if (!response.ok) {
-      alert(result.error);
+      alert(result.error || "Failed to create student.");
       return;
     }
 
     alert(
-`Student Created Successfully!
+      `Student Created Successfully!
 
 Email:
 ${email}
@@ -99,53 +97,94 @@ ${result.password}`
   }
 
   return (
-    <div className="max-w-xl p-8">
+  <div className="min-h-screen bg-[#070b14] text-white px-6 py-10">
+    <div className="max-w-3xl mx-auto">
 
-      <h1 className="text-3xl font-bold mb-6">
-        Add Student
-      </h1>
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-2xl">
+            🎓
+          </div>
 
-      <input
-        className="border p-3 rounded w-full mb-4"
-        placeholder="Student Name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
+          <div>
+            <h1 className="text-3xl font-bold">
+              Add Student
+            </h1>
+            <p className="text-gray-400 mt-1">
+              Create a new student account and assign them to a batch.
+            </p>
+          </div>
+        </div>
+      </div>
 
-      <input
-        className="border p-3 rounded w-full mb-4"
-        placeholder="Student Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
+      {/* Form Card */}
+      <div className="bg-[#111827] border border-gray-700/60 rounded-2xl p-8 shadow-xl">
 
-      <select
-        value={batchId}
-        onChange={(e) => setBatchId(e.target.value)}
-        className="border p-3 rounded w-full mb-6"
-      >
-        <option value="">
-          Select Batch
-        </option>
+        {/* Student Name */}
+        <div className="mb-6">
+          <label className="block text-sm font-semibold text-gray-200 mb-2">
+            Student Name
+          </label>
 
-        {batches.map((batch) => (
-          <option
-            key={batch.id}
-            value={batch.id}
+          <input
+            type="text"
+            placeholder="Enter student name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full rounded-xl bg-[#1e293b] border border-gray-700 px-4 py-3.5 text-white placeholder-gray-500 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+          />
+        </div>
+
+        {/* Email */}
+        <div className="mb-6">
+          <label className="block text-sm font-semibold text-gray-200 mb-2">
+            Student Email
+          </label>
+
+          <input
+            type="email"
+            placeholder="Enter student email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded-xl bg-[#1e293b] border border-gray-700 px-4 py-3.5 text-white placeholder-gray-500 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+          />
+        </div>
+
+        {/* Batch */}
+        <div className="mb-8">
+          <label className="block text-sm font-semibold text-gray-200 mb-2">
+            Batch
+          </label>
+
+          <select
+            value={batchId}
+            onChange={(e) => setBatchId(e.target.value)}
+            className="w-full rounded-xl bg-[#1e293b] border border-gray-700 px-4 py-3.5 text-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
           >
-            {batch.name}
-          </option>
-        ))}
-      </select>
+            <option value="">
+              Select Batch
+            </option>
 
-      <button
-        onClick={createStudent}
-        disabled={loading}
-        className="bg-black text-white px-5 py-3 rounded"
-      >
-        {loading ? "Creating..." : "Create Student"}
-      </button>
+            {batches.map((batch) => (
+              <option key={batch.id} value={batch.id}>
+                {batch.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
+        {/* Button */}
+        <button
+          onClick={createStudent}
+          disabled={loading}
+          className="w-full rounded-xl bg-green-600 hover:bg-green-500 disabled:bg-green-800 disabled:cursor-not-allowed px-5 py-3.5 font-semibold text-white transition shadow-lg shadow-green-900/20"
+        >
+          {loading ? "Creating Student..." : "Create Student"}
+        </button>
+
+      </div>
     </div>
-  );
+  </div>
+);
 }
