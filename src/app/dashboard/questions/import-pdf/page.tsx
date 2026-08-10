@@ -292,21 +292,27 @@ export default function AIImportPage() {
           </p>
 
           <input
-            hidden
-            type="file"
-            accept=".pdf,application/pdf"
-            disabled={loading}
-            onChange={(e) => {
+  hidden
+  type="file"
+  accept=".pdf,application/pdf"
+  disabled={loading}
+  onChange={(e) => {
+    const selected = e.target.files?.[0];
 
-              const selected =
-                e.target.files?.[0];
+    if (!selected) return;
 
-              if (selected) {
-                handlePDF(selected);
-              }
+    if (
+      selected.type !== "application/pdf" &&
+      !selected.name.toLowerCase().endsWith(".pdf")
+    ) {
+      alert("Please upload a PDF file only.");
+      e.target.value = "";
+      return;
+    }
 
-            }}
-          />
+    handlePDF(selected);
+  }}
+/>
 
         </label>
 
