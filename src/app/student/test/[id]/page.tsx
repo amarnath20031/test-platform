@@ -2,16 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { useParams, useRouter } from "next/navigation";
+import {
+  useParams,
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
 
 export default function NewAttemptPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+const isNewAttempt =
+  searchParams.get("newAttempt") === "1";
 
   const testIdFromUrl = params.id as string;
   const [showSubmitModal, setShowSubmitModal] =useState(false);
   const [submitted, setSubmitted] = useState(false);
   const submittingRef = useRef(false);
+  const submitTestRef =
+  useRef<(() => Promise<void>) | null>(null);
 
   const [tests, setTests] = useState<any[]>([]);
   const [questions, setQuestions] = useState<any[]>([]);
@@ -30,27 +39,83 @@ const [visitedQuestions, setVisitedQuestions] =
   const [testId, setTestId] = useState("");
 
   const [timeLeft, setTimeLeft] = useState(0);
+  const [examEndAt, setExamEndAt] = useState<number | null>(null);
   const [initialTime, setInitialTime] = useState(0);
 
-  const questionStartTime = useRef(Date.now());
+  const questionStartTime = useRef<number | null>(null);
+  const questionsRef = useRef<any[]>([]);
+const currentQuestionRef = useRef(0);
+const timeLeftRef = useRef(0);
+const initialTimeRef = useRef(0);
+
+useEffect(() => {
+  questionsRef.current = questions;
+}, [questions]);
+
+useEffect(() => {
+  currentQuestionRef.current = currentQuestion;
+}, [currentQuestion]);
+
+useEffect(() => {
+  timeLeftRef.current = timeLeft;
+}, [timeLeft]);
+
+useEffect(() => {
+  initialTimeRef.current = initialTime;
+}, [initialTime]);
+
+  useEffect(() => {
+  if (!questions.length) return;
+
+  questionStartTime.current = Date.now();
+}, [currentQuestion, questions.length]);
+  const loadKeyRef = useRef("");
+  const examEndTimeRef = useRef<number | null>(null);
 
 const questionTimes = useRef<Record<string, number>>({});
 const answerChanges = useRef<Record<string, number>>({});
 const initialAnswers = useRef<Record<string, string>>({});
 
 function saveCurrentQuestionTime() {
-  const current = questions[currentQuestion];
+  const current =
+    questionsRef.current[currentQuestionRef.current];
 
-  if (!current) return;
+  if (
+    !current ||
+    questionStartTime.current === null
+  ) {
+    return;
+  }
 
-  const seconds = Math.floor(
-    (Date.now() - questionStartTime.current) / 1000
+  const now = Date.now();
+
+  const effectiveNow =
+    examEndTimeRef.current !== null
+      ? Math.min(now, examEndTimeRef.current)
+      : now;
+
+  const seconds = Math.max(
+    0,
+    Math.floor(
+      (effectiveNow -
+        questionStartTime.current) /
+        1000
+    )
   );
 
   questionTimes.current[current.id] =
-    (questionTimes.current[current.id] || 0) + seconds;
+    (questionTimes.current[current.id] || 0) +
+    seconds;
 
-  questionStartTime.current = Date.now();
+  questionStartTime.current = effectiveNow;
+
+  console.log(
+    "SAVED QUESTION TIME:",
+    current.id,
+    seconds,
+    "TOTAL:",
+    questionTimes.current[current.id]
+  );
 }
 
   useEffect(() => {
@@ -59,37 +124,74 @@ function saveCurrentQuestionTime() {
 
 useEffect(() => {
   if (
-    testIdFromUrl &&
-    studentId &&
-    tests.length > 0
+    !testIdFromUrl ||
+    !studentId ||
+    tests.length === 0
   ) {
-    loadQuestions(testIdFromUrl);
+    return;
   }
-}, [testIdFromUrl, studentId, tests]);
+
+  const loadKey = `${testIdFromUrl}-${studentId}-${isNewAttempt}`;
+
+  // Prevent React Strict Mode / duplicate renders
+  // from starting the same attempt twice.
+  if (loadKeyRef.current === loadKey) {
+    return;
+  }
+
+  loadKeyRef.current = loadKey;
+
+  loadQuestions(testIdFromUrl);
+}, [
+  testIdFromUrl,
+  studentId,
+  tests,
+  isNewAttempt,
+]);
 
   useEffect(() => {
-    if (timeLeft <= 0 || submitted) return;
+  if (examEndAt === null || submitted) {
+    return;
+  }
 
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
+  const updateTimer = () => {
+    const remaining = Math.max(
+      0,
+      Math.ceil(
+        (examEndAt - Date.now()) / 1000
+      )
+    );
 
-          if (!submitted) {
-            submitTest();
-          }
+    timeLeftRef.current = remaining;
+    setTimeLeft(remaining);
 
-          return 0;
-        }
+    if (
+      remaining <= 0 &&
+      !submittingRef.current
+    ) {
+      console.log("TIME UP - AUTO SUBMIT");
 
-        return prev - 1;
-      });
-    }, 1000);
+      if (submitTestRef.current) {
+        submitTestRef.current();
+      }
+    }
+  };
 
-    return () => clearInterval(timer);
-  }, [timeLeft, submitted]);
+  updateTimer();
 
-  useEffect(() => {
+  const timer = window.setInterval(
+    updateTimer,
+    250
+  );
+
+  return () => {
+    window.clearInterval(timer);
+  };
+}, [examEndAt, submitted]);
+
+
+// Persist remaining exam time.
+useEffect(() => {
   if (!studentId || !testId) return;
 
   const save = setTimeout(async () => {
@@ -174,57 +276,155 @@ const totalSeconds =
   (selectedTest.durationSeconds || 0);
 
 // Now use it
-setTimeLeft(totalSeconds);
-setInitialTime(totalSeconds);
+  // Check whether this is a completed assignment.
+  // Completed = student clicked "Practice Again".
+  const { data: assignment, error: assignmentError } =
+    await supabase
+      .from("TestAssignment")
+      .select("status")
+      .eq("studentId", studentId)
+      .eq("testId", id)
+      .maybeSingle();
 
-  // Restore Exam Session
-  const { data: session, error } = await supabase
-  .from("ExamSession")
-  .select("*")
-  .eq("studentId", studentId)
-  .eq("testId", id)
-  .maybeSingle();
-
-console.log("SESSION =", session);
-console.log("SESSION ERROR =", error);
-
-  if (session) {
-  setCurrentQuestion(session.currentQuestion);
-
-  setVisitedQuestions(session.visitedQuestions || []);
-  visitedQuestionsRef.current =
-    session.visitedQuestions || [];
-
-  setMarkedQuestions(session.markedQuestions || []);
-
-  setTimeLeft(session.remainingTime);
-
-}else {
-  const newSession = {
-    id: crypto.randomUUID(),
-    studentId,
-    testId: id,
-    currentQuestion: 0,
-    visitedQuestions: [],
-    markedQuestions: [],
-    remainingTime: totalSeconds,
-  };
-
-  const { error } = await supabase
-    .from("ExamSession")
-    .insert(newSession);
-
-  if (error) {
-    console.error(error);
-    return;
+  if (assignmentError) {
+    console.error(
+      "Assignment lookup error:",
+      assignmentError
+    );
   }
 
-  setCurrentQuestion(0);
-  setVisitedQuestions([]);
-  visitedQuestionsRef.current = [];
-  setMarkedQuestions([]);
-  setTimeLeft(totalSeconds);
+  const isPractice =
+    assignment?.status === "completed";
+
+  console.log("Assignment status =", assignment?.status);
+  console.log("Is practice =", isPractice);
+
+  // --------------------------------------------------
+  // EXAM SESSION
+  // --------------------------------------------------
+
+  const { data: session, error: sessionError } =
+    await supabase
+      .from("ExamSession")
+      .select("*")
+      .eq("studentId", studentId)
+      .eq("testId", id)
+      .maybeSingle();
+
+  console.log("NEW ATTEMPT =", isNewAttempt);
+  console.log("SESSION =", session);
+  console.log("SESSION ERROR =", sessionError);
+
+  if (isNewAttempt) {
+    // Completely reset this attempt.
+    setCurrentQuestion(0);
+    setVisitedQuestions([]);
+    visitedQuestionsRef.current = [];
+    setMarkedQuestions([]);
+    setTimeLeft(totalSeconds);
+    setInitialTime(totalSeconds);
+
+    // Delete any old drafts.
+    const { error: draftDeleteError } =
+      await supabase
+        .from("DraftAnswer")
+        .delete()
+        .eq("studentId", studentId)
+        .eq("testId", id);
+
+    if (draftDeleteError) {
+      console.error(
+        "DRAFT DELETE ERROR:",
+        draftDeleteError
+      );
+    }
+
+    // Reset the existing exam session, or create it if it doesn't exist.
+const { error: sessionUpsertError } = await supabase
+  .from("ExamSession")
+  .upsert(
+    {
+      id: crypto.randomUUID(),
+      studentId,
+      testId: id,
+      currentQuestion: 0,
+      visitedQuestions: [],
+      markedQuestions: [],
+      remainingTime: totalSeconds,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      onConflict: "studentId,testId",
+    }
+  );
+
+if (sessionUpsertError) {
+  console.error(
+    "NEW SESSION UPSERT ERROR:",
+    sessionUpsertError
+  );
+  return;
 }
+
+console.log("NEW ATTEMPT SESSION RESET SUCCESS");
+
+  } else if (session) {
+    // Resume unfinished test.
+    setCurrentQuestion(
+      session.currentQuestion || 0
+    );
+
+    setVisitedQuestions(
+      session.visitedQuestions || []
+    );
+
+    visitedQuestionsRef.current =
+      session.visitedQuestions || [];
+
+    setMarkedQuestions(
+      session.markedQuestions || []
+    );
+
+    const remaining =
+  session.remainingTime ?? totalSeconds;
+
+const endAt =
+  Date.now() + remaining * 1000;
+
+setTimeLeft(remaining);
+setExamEndAt(endAt);
+examEndTimeRef.current = endAt;
+
+  } else {
+    // Brand new official attempt.
+    setCurrentQuestion(0);
+    setVisitedQuestions([]);
+    visitedQuestionsRef.current = [];
+    setMarkedQuestions([]);
+    setTimeLeft(totalSeconds);
+
+    const { error: newSessionError } =
+      await supabase
+        .from("ExamSession")
+        .insert({
+          id: crypto.randomUUID(),
+          studentId,
+          testId: id,
+          currentQuestion: 0,
+          visitedQuestions: [],
+          markedQuestions: [],
+          remainingTime: totalSeconds,
+        });
+
+    if (newSessionError) {
+      console.error(
+        "NEW SESSION ERROR:",
+        newSessionError
+      );
+      return;
+    }
+  }
 
   setInitialTime(totalSeconds);
 
@@ -271,52 +471,82 @@ if (session) {
 } else if (uniqueSections.length > 0) {
   setSelectedSection(uniqueSections[0].id);
 }
-    setQuestions(
-      questionData.map((q) => ({
-        ...q,
-        selectedOption:
-          drafts?.find((d) => d.questionId === q.id)?.optionId || "",
-      }))
-    );
+    const questionsWithAnswers = questionData.map((q) => ({
+  ...q,
+  selectedOption: isNewAttempt
+    ? ""
+    : drafts?.find((d) => d.questionId === q.id)?.optionId || "",
+}));
 
-    const firstQuestionId =
-  questionData[currentQuestion]?.id;
+setQuestions(questionsWithAnswers);
+    const resumeRemaining =
+  !isNewAttempt && session
+    ? session.remainingTime ?? totalSeconds
+    : totalSeconds;
 
-if (
-  firstQuestionId &&
-  !visitedQuestions.includes(firstQuestionId)
-) {
-  const updatedVisited = [
-    ...visitedQuestions,
-    firstQuestionId,
-  ];
+const endAt =
+  Date.now() + resumeRemaining * 1000;
+
+setTimeLeft(resumeRemaining);
+setInitialTime(totalSeconds);
+setExamEndAt(endAt);
+
+initialAnswers.current = {};
+answerChanges.current = {};
+questionTimes.current = {};
+questionStartTime.current = null;
+examEndTimeRef.current = endAt;
+
+// Restore the original answers when resuming.
+if (!isNewAttempt && drafts) {
+  drafts.forEach((draft: any) => {
+    if (draft.optionId) {
+      initialAnswers.current[draft.questionId] =
+        draft.optionId;
+    }
+  });
+}
+
+console.log(
+  "QUESTIONS LOADED BEFORE TIMER:",
+  questionData.length
+);
+
+   // Mark the currently displayed question as visited.
+const firstQuestion =
+  questionData[currentQuestion] || questionData[0];
+
+if (firstQuestion) {
+  const updatedVisited = Array.from(
+    new Set([
+      ...(visitedQuestionsRef.current || []),
+      firstQuestion.id,
+    ])
+  );
 
   setVisitedQuestions(updatedVisited);
   visitedQuestionsRef.current = updatedVisited;
 
-  await supabase
+  const { error: visitError } = await supabase
     .from("ExamSession")
     .update({
       visitedQuestions: updatedVisited,
+      currentQuestion:
+        questionData.findIndex(
+          (q) => q.id === firstQuestion.id
+        ),
+      updatedAt: new Date().toISOString(),
     })
     .eq("studentId", studentId)
     .eq("testId", id);
+
+  if (visitError) {
+    console.error(
+      "INITIAL VISIT SAVE ERROR:",
+      visitError
+    );
+  }
 }
-
-    if (!session && questionData.length > 0) {
-      const firstVisited = [questionData[0].id];
-
-      setVisitedQuestions(firstVisited);
-      visitedQuestionsRef.current = firstVisited;
-
-      await supabase
-        .from("ExamSession")
-        .update({
-          visitedQuestions: firstVisited,
-        })
-        .eq("studentId", studentId)
-        .eq("testId", id);
-    }
   }
 }
 
@@ -331,8 +561,8 @@ if (
     return;
   }
 
-  setSubmitted(true);
-  saveCurrentQuestionTime();
+ saveCurrentQuestionTime();
+setSubmitted(true);
 
   const selectedTest = tests.find(
     (t) => t.id === testId
@@ -434,8 +664,19 @@ if (
       ? (correctAnswers / questions.length) * 100
       : 0;
 
-  const timeTaken =
-    initialTime - timeLeft;
+ const finalTimeLeft = timeLeftRef.current;
+
+const timeTaken = Math.max(
+  0,
+  Math.min(
+    initialTimeRef.current,
+    initialTimeRef.current - finalTimeLeft
+  )
+);
+
+console.log("INITIAL TIME:", initialTimeRef.current);
+console.log("FINAL TIME LEFT:", finalTimeLeft);
+console.log("TIME TAKEN:", timeTaken);
 
   /*
    * ------------------------------------------------
@@ -497,34 +738,73 @@ const answersToInsert = questions.map((q) => {
     (o: any) => o.isCorrect
   );
 
+  const changes =
+    answerChanges.current[q.id] || 0;
+
   return {
     id: crypto.randomUUID(),
     attemptId,
     questionId: q.id,
+
     optionId: q.selectedOption || null,
+
     initialOptionId:
       initialAnswers.current[q.id] || null,
-    answerChanges:
-      answerChanges.current[q.id] || 0,
-    visited:
-      visitedQuestionsRef.current.includes(q.id),
-    isCorrect: q.selectedOption
-      ? q.selectedOption === correct?.id
-      : false,
+
+    answerChanges: changes,
+
+    changedAnswer: changes > 0,
+
     timeSpent:
       questionTimes.current[q.id] || 0,
+
+    visited:
+      visitedQuestionsRef.current.includes(q.id),
+
+    isCorrect:
+      q.selectedOption
+        ? q.selectedOption === correct?.id
+        : false,
   };
 });
 
-const { error: answersError } = await supabase
+const {
+  data: insertedAnswers,
+  error: answersError,
+} = await supabase
   .from("Answer")
-  .insert(answersToInsert);
+  .insert(answersToInsert)
+  .select();
+
+console.log(
+  "ANSWERS TO INSERT:",
+  answersToInsert
+);
+
+console.log(
+  "INSERTED ANSWERS:",
+  insertedAnswers
+);
+
+console.log(
+  "ANSWER INSERT ERROR:",
+  answersError
+);
 
 if (answersError) {
   console.error(
-    "Answer insert error:",
+    "ANSWER INSERT FAILED:",
     answersError
   );
+
+  alert(
+    `Answer save failed: ${answersError.message}`
+  );
+
+  setSubmitted(false);
+  submittingRef.current = false;
+
+  return;
 }
 
   /*
@@ -621,43 +901,41 @@ if (answersError) {
     .eq("testId", testId);
 
   /*
-   * ------------------------------------------------
-   * GO TO RESULT
-   * ------------------------------------------------
-   */
+  ---
+  GO TO RESULT
+  ---
+*/
 
-  console.log("================================");
-  console.log("ATTEMPT CREATED");
-  console.log("Attempt ID:", attemptId);
-  console.log("Student:", studentId);
-  console.log("Test:", testId);
-  console.log("Practice:", isPractice);
-  console.log("Score:", score);
-  console.log("================================");
+console.log("================================");
+console.log("ATTEMPT CREATED");
+console.log("Attempt ID:", attemptId);
+console.log("Student:", studentId);
+console.log("Test:", testId);
+console.log("Practice:", isPractice);
+console.log("Score:", score);
+console.log("================================");
 
-  router.replace(`/result/${attemptId}`);
+router.replace(`/result/${attemptId}`);
 }
+submitTestRef.current = submitTest;
 
-const filteredQuestions = questions.filter(
-  (q) => q.sectionId === selectedSection
-);
+const filteredQuestions =
+  sections.length > 0
+    ? questions.filter(
+        (q) => q.sectionId === selectedSection
+      )
+    : questions;
 
-const currentSectionQuestion =
-  filteredQuestions.findIndex(
-    (q) => q.id === questions[currentQuestion]?.id
-  );
-  const formattedTime =
-    `${Math.floor(timeLeft / 3600)}`
-      .padStart(2, "0") +
-    ":" +
-    `${Math.floor(
-      (timeLeft % 3600) / 60
-    )}`.padStart(2, "0") +
-    ":" +
-    `${timeLeft % 60}`.padStart(
-      2,
-      "0"
-    );
+// Question number shown to the student
+const displayedQuestionNumber =
+  currentQuestion + 1;
+
+const formattedTime =
+  `${Math.floor(timeLeft / 3600)}`.padStart(2, "0") +
+  ":" +
+  `${Math.floor((timeLeft % 3600) / 60)}`.padStart(2, "0") +
+  ":" +
+  `${timeLeft % 60}`.padStart(2, "0");
 
   return (
     <div className="p-8 max-w-3xl">
@@ -709,16 +987,16 @@ const currentSectionQuestion =
             (q) => q.id === firstQuestion.id
           );
 
-          let updatedVisited = [...visitedQuestions];
-
-if (!updatedVisited.includes(firstQuestion.id)) {
-  updatedVisited.push(firstQuestion.id);
-}
+          const updatedVisited = Array.from(
+  new Set([
+    ...visitedQuestionsRef.current,
+    firstQuestion.id,
+  ])
+);
 
 setVisitedQuestions(updatedVisited);
 visitedQuestionsRef.current = updatedVisited;
           setCurrentQuestion(index);
-          questionStartTime.current = Date.now();
         }
       }}
       className={`px-5 py-3 rounded-xl font-semibold ${
@@ -737,7 +1015,7 @@ visitedQuestionsRef.current = updatedVisited;
     {/* LEFT SIDE */}
     <div className="flex-1 border p-6 rounded-xl">
       <p className="text-xl font-bold mb-6">
-  Question {currentSectionQuestion + 1}
+  Question {displayedQuestionNumber}
 </p>
 
       <p className="text-lg mb-6">
@@ -795,20 +1073,44 @@ visitedQuestionsRef.current = updatedVisited;
     )
   );
 
-  // Save draft
+ // Save draft
+const { data: existingDraft, error: draftLookupError } =
   await supabase
-  .from("DraftAnswer")
- .upsert(
-  {
-    studentId,
-    testId,
-    questionId: questions[currentQuestion].id,
-    optionId: option.id,
-  },
-  {
-    onConflict: "studentId,testId,questionId",
+    .from("DraftAnswer")
+    .select("id")
+    .eq("studentId", studentId)
+    .eq("testId", testId)
+    .eq("questionId", questions[currentQuestion].id)
+    .maybeSingle();
+
+if (draftLookupError) {
+  console.error("DRAFT LOOKUP ERROR:", draftLookupError);
+} else if (existingDraft) {
+  const { error: draftUpdateError } = await supabase
+    .from("DraftAnswer")
+    .update({
+      optionId: option.id,
+    })
+    .eq("id", existingDraft.id);
+
+  if (draftUpdateError) {
+    console.error("DRAFT UPDATE ERROR:", draftUpdateError);
   }
-);
+} else {
+  const { error: draftInsertError } = await supabase
+    .from("DraftAnswer")
+    .insert({
+      id: crypto.randomUUID(),
+      studentId,
+      testId,
+      questionId: questions[currentQuestion].id,
+      optionId: option.id,
+    });
+
+  if (draftInsertError) {
+    console.error("DRAFT INSERT ERROR:", draftInsertError);
+  }
+}
 }}
             />
 
@@ -837,7 +1139,6 @@ if (!updatedVisited.includes(questions[prev].id)) {
 setVisitedQuestions(updatedVisited);
 visitedQuestionsRef.current = updatedVisited;
   setCurrentQuestion(prev);
-  questionStartTime.current = Date.now();
 
   await supabase
   .from("ExamSession")
@@ -934,7 +1235,6 @@ visitedQuestionsRef.current = updatedVisited;
   setVisitedQuestions(updatedVisited);
   visitedQuestionsRef.current = updatedVisited;
   setCurrentQuestion(next);
-questionStartTime.current = Date.now();
 
   await supabase
     .from("ExamSession")
@@ -1043,23 +1343,10 @@ if (answered && marked) {
   );
 
   setCurrentQuestion(actualIndex);
-
-  await supabase
-    .from("ExamSession")
-    .update({
-      currentQuestion: actualIndex,
-      visitedQuestions: updatedVisited,
-      markedQuestions,
-      remainingTime: timeLeft,
-    })
-    .eq("studentId", studentId)
-    .eq("testId", testId);
-
-  questionStartTime.current = Date.now();
 }}
                   className={`${color} h-12 w-12 rounded-lg text-white font-bold`}
                 >
-                  {currentSectionQuestion >= 0
+                  {sections.length > 0
   ? filteredQuestions.findIndex(
       (x) => x.id === q.id
     ) + 1
@@ -1155,10 +1442,10 @@ if (answered && marked) {
         </button>
 
         <button
-          onClick={() => {
-            setShowSubmitModal(false);
-            submitTest();
-          }}
+         onClick={async () => {
+  setShowSubmitModal(false);
+  await submitTest();
+}}
           className="bg-red-600 px-5 py-3 rounded"
         >
           Submit Test

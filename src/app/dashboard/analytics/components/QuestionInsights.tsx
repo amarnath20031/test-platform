@@ -112,9 +112,10 @@ function InsightCard({
               {q.topic || "No Topic"}
             </p>
 
-            <p className="text-slate-500 text-xs mt-1">
-              {q.attempts} attempts
-            </p>
+           <p className="text-slate-500 text-xs mt-1">
+  {q.attempts}{" "}
+  {q.attempts === 1 ? "attempt" : "attempts"}
+</p>
 
             {type === "hard" && (
               <div className="grid grid-cols-2 gap-2 mt-3 text-sm">

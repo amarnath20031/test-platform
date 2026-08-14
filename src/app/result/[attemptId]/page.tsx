@@ -55,56 +55,186 @@ const [selectedSection, setSelectedSection] = useState("");
 }, [attemptId]);
 
   async function loadData() {
-    const { data: attemptData } =
-      await supabase
-        .from("Attempt")
-        .select("*")
-        .eq("id", attemptId)
-        .single();
+  console.log("LOADING RESULT FOR ATTEMPT:", attemptId);
 
-    setAttempt(attemptData);
+  // -----------------------------
+  // 1. Load attempt
+  // -----------------------------
+  const { data: attemptData, error: attemptError } =
+    await supabase
+      .from("Attempt")
+      .select("*")
+      .eq("id", attemptId)
+      .single();
 
-    const { data } = await supabase
+  console.log("ATTEMPT DATA:", attemptData);
+  console.log("ATTEMPT ERROR:", attemptError);
+
+  if (attemptError || !attemptData) {
+    console.error("FAILED TO LOAD ATTEMPT:", attemptError);
+    return;
+  }
+
+  setAttempt(attemptData);
+
+  // -----------------------------
+  // 2. Load answers WITHOUT
+  //    nested PostgREST joins
+  // -----------------------------
+  const { data: answerData, error: answerError } =
+    await supabase
       .from("Answer")
-      .select(`
-        *,
-       question:Question(
-  *,
-  section:Section(*),
-  options:Option(*)
-)
-      `)
+      .select("*")
       .eq("attemptId", attemptId);
 
-    if (data) {
-      console.table(
-  data.map((a) => ({
-    question: a.questionId,
-    visited: a.visited,
-    option: a.optionId,
-    time: a.timeSpent,
-  }))
-);
-  setAnswers(data);
+  console.log("ANSWER DATA:", answerData);
+  console.log("ANSWER ERROR:", answerError);
 
+  if (answerError) {
+    console.error("FAILED TO LOAD ANSWERS:", answerError);
+    setAnswers([]);
+    return;
+  }
+
+  if (!answerData || answerData.length === 0) {
+    console.warn("NO ANSWERS FOUND FOR ATTEMPT:", attemptId);
+    setAnswers([]);
+    setSections([]);
+    return;
+  }
+
+  // -----------------------------
+  // 3. Get question IDs
+  // -----------------------------
+  const questionIds = Array.from(
+    new Set(
+      answerData
+        .map((a: any) => a.questionId)
+        .filter(Boolean)
+    )
+  );
+
+  console.log("QUESTION IDS:", questionIds);
+
+  if (questionIds.length === 0) {
+    console.warn("ANSWERS HAVE NO QUESTION IDS");
+    setAnswers(answerData);
+    setSections([]);
+    return;
+  }
+
+  // -----------------------------
+  // 4. Load questions
+  // -----------------------------
+  const { data: questionData, error: questionError } =
+    await supabase
+      .from("Question")
+      .select("*")
+      .in("id", questionIds);
+
+  console.log("QUESTION DATA:", questionData);
+  console.log("QUESTION ERROR:", questionError);
+
+  if (questionError) {
+    console.error(
+      "FAILED TO LOAD QUESTIONS:",
+      questionError
+    );
+    return;
+  }
+
+  // -----------------------------
+  // 5. Load options
+  // -----------------------------
+  const { data: optionData, error: optionError } =
+    await supabase
+      .from("Option")
+      .select("*")
+      .in("questionId", questionIds);
+
+  console.log("OPTION DATA:", optionData);
+  console.log("OPTION ERROR:", optionError);
+
+  if (optionError) {
+    console.error(
+      "FAILED TO LOAD OPTIONS:",
+      optionError
+    );
+    return;
+  }
+
+  // -----------------------------
+  // 6. Build question lookup
+  // -----------------------------
+  const questionMap = new Map(
+    (questionData || []).map((q: any) => [
+      q.id,
+      {
+        ...q,
+        options: (optionData || []).filter(
+          (o: any) => o.questionId === q.id
+        ),
+      },
+    ])
+  );
+
+  // -----------------------------
+  // 7. Attach question to answer
+  // -----------------------------
+  const enrichedAnswers = answerData.map(
+    (a: any) => ({
+      ...a,
+      question:
+        questionMap.get(a.questionId) || null,
+    })
+  );
+
+  console.log(
+    "ENRICHED ANSWERS:",
+    enrichedAnswers
+  );
+
+  // -----------------------------
+  // 8. Set answers
+  // -----------------------------
+  setAnswers(enrichedAnswers);
+
+  // -----------------------------
+  // 9. Build sections from questions
+  // -----------------------------
   const uniqueSections = Array.from(
     new Map(
-      data
-        .filter((a) => a.question?.section)
-        .map((a) => [
-          a.question.section.id,
-          a.question.section,
+      enrichedAnswers
+        .map((a: any) => a.question)
+        .filter(
+          (q: any) => q && q.sectionId
+        )
+        .map((q: any) => [
+          q.sectionId,
+          {
+            id: q.sectionId,
+            name:
+              q.sectionName ||
+              q.section ||
+              `Section ${q.sectionId}`,
+          },
         ])
     ).values()
+  );
+
+  console.log(
+    "RESULT SECTIONS:",
+    uniqueSections
   );
 
   setSections(uniqueSections);
 
   if (uniqueSections.length > 0) {
-    setSelectedSection(uniqueSections[0].id);
+    setSelectedSection(
+      uniqueSections[0].id
+    );
   }
 }
-  }
 
   if (!attempt) {
     return (
@@ -114,10 +244,13 @@ const [selectedSection, setSelectedSection] = useState("");
     );
   }
 
-  const sectionAnswers = answers.filter(
-  (a) =>
-    a.question?.sectionId === selectedSection
-);
+  const sectionAnswers =
+  sections.length > 0
+    ? answers.filter(
+        (a) =>
+          a.question?.sectionId === selectedSection
+      )
+    : answers;
 
 const filteredAnswers =
   sectionAnswers.filter((answer) => {
@@ -292,15 +425,6 @@ if (changes >= 2) {
     title: "🔄 Overthinking",
     message:
       `You changed your answer ${changes} times. Too many changes often indicate uncertainty.`,
-  });
-}
-
-if (timeSpent > 90) {
-  insights.push({
-    color: "orange",
-    title: "⏱ Time Analysis",
-    message:
-      "You spent over 90 seconds on this question. Improving concept clarity can reduce solving time.",
   });
 }
 

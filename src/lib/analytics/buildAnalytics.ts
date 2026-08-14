@@ -363,77 +363,88 @@ function buildQuestionInsights(
       };
     });
 
-  const timedQuestions =
-    analytics.filter(
-      (question: any) =>
-        question.hasTimingData
-    );
+  const qualifiedQuestions =
+  analytics.filter(
+    (question: any) =>
+      question.attempts >= 3
+  );
 
-  const changedQuestions =
-    analytics.filter(
-      (question: any) =>
-        question.hasChangeData
-    );
+const timedQuestions =
+  qualifiedQuestions.filter(
+    (question: any) =>
+      question.hasTimingData
+  );
 
-  return {
-    hardest: [...analytics]
-      .sort(
-        (a: any, b: any) =>
-          b.difficultyScore -
-          a.difficultyScore
-      )
-      .slice(0, 10),
+const changedQuestions =
+  qualifiedQuestions.filter(
+    (question: any) =>
+      question.hasChangeData
+  );
 
-    skipped: [...analytics]
-      .sort(
-        (a: any, b: any) =>
-          b.skipRate -
-          a.skipRate
-      )
-      .slice(0, 10),
+return {
+  all: analytics,
 
-    // ONLY questions with real timing data
-    slowest: [...timedQuestions]
-      .sort(
-        (a: any, b: any) =>
-          b.avgTime -
-          a.avgTime
-      )
-      .slice(0, 10),
+  hardest: [...qualifiedQuestions]
+    .sort(
+      (a: any, b: any) =>
+        b.difficultyScore -
+        a.difficultyScore
+    )
+    .slice(0, 10),
 
-    fastWrong: [...analytics]
-      .filter(
-        (q: any) =>
-          q.fastWrong > 0
-      )
-      .sort(
-        (a: any, b: any) =>
-          b.fastWrong -
-          a.fastWrong
-      )
-      .slice(0, 10),
+  // Only questions with at least 3 attempts
+  skipped: [...qualifiedQuestions]
+    .sort(
+      (a: any, b: any) =>
+        b.skipRate -
+        a.skipRate
+    )
+    .slice(0, 10),
 
-    slowWrong: [...analytics]
-      .filter(
-        (q: any) =>
-          q.slowWrong > 0
-      )
-      .sort(
-        (a: any, b: any) =>
-          b.slowWrong -
-          a.slowWrong
-      )
-      .slice(0, 10),
+  // Only qualified questions with timing data
+  slowest: [...timedQuestions]
+    .sort(
+      (a: any, b: any) =>
+        b.avgTime -
+        a.avgTime
+    )
+    .slice(0, 10),
 
-    // ONLY questions with actual change data
-    answerChanges: [...changedQuestions]
-      .sort(
-        (a: any, b: any) =>
-          b.avgChanges -
-          a.avgChanges
-      )
-      .slice(0, 10),
-  };
+  // Only qualified questions with fast-wrong data
+  fastWrong: [...qualifiedQuestions]
+    .filter(
+      (q: any) =>
+        q.fastWrong > 0
+    )
+    .sort(
+      (a: any, b: any) =>
+        b.fastWrong -
+        a.fastWrong
+    )
+    .slice(0, 10),
+
+  // Only qualified questions with slow-wrong data
+  slowWrong: [...qualifiedQuestions]
+    .filter(
+      (q: any) =>
+        q.slowWrong > 0
+    )
+    .sort(
+      (a: any, b: any) =>
+        b.slowWrong -
+        a.slowWrong
+    )
+    .slice(0, 10),
+
+  // Only qualified questions with actual change data
+  answerChanges: [...changedQuestions]
+    .sort(
+      (a: any, b: any) =>
+        b.avgChanges -
+        a.avgChanges
+    )
+    .slice(0, 10),
+};
 }
 /* =========================================================
    SUBJECT ANALYTICS
@@ -847,7 +858,7 @@ batch.answers.forEach(
 );
 
       let weakestSubject =
-        "Not enough data";
+  "No weak subject";
 
       let weakestAccuracy =
         101;
@@ -866,33 +877,23 @@ batch.answers.forEach(
             100;
 
           if (
-            subjectAccuracy <
-            weakestAccuracy
-          ) {
-            weakestAccuracy =
-              subjectAccuracy;
+  subjectAccuracy < weakestAccuracy &&
+  subjectAccuracy < 100
+) {
+  weakestAccuracy = subjectAccuracy;
 
-            weakestSubject =
-              subjectMap[
-                subjectId
-              ]?.name ||
-              "Unknown";
-          }
+  weakestSubject =
+    subjectMap[subjectId]?.name ||
+    "Unknown";
+}
         }
       );
 
-      const riskScore =
-        (100 - accuracy) * 0.6 +
-        Math.min(
-          avgTime / 120,
-          1
-        ) *
-          25 +
-        (avgScore < 40
-          ? 15
-          : avgScore < 60
-          ? 8
-          : 0);
+     const riskScore =
+  (100 - accuracy) * 0.6 +
+  (accuracy < 80
+    ? Math.min(avgTime / 120, 1) * 10
+    : 0);
 
       return {
         ...batch,
@@ -1035,10 +1036,8 @@ function buildStudentRisk(
 );
 
       let weakestTopic =
-        "Not enough data";
-
-      let weakestTopicAccuracy =
-        101;
+  "No weak topic";
+  let weakestTopicAccuracy = 101;
 
       Object.entries(
         topicStats
@@ -1054,9 +1053,9 @@ function buildStudentRisk(
             100;
 
           if (
-            topicAccuracy <
-            weakestTopicAccuracy
-          ) {
+  topicAccuracy < weakestTopicAccuracy &&
+  topicAccuracy < 100
+) {
             weakestTopicAccuracy =
               topicAccuracy;
 
@@ -1065,10 +1064,8 @@ function buildStudentRisk(
         }
       );
 
-      const riskScore =
-        (100 - accuracy) * 0.65 +
-        (avgScore < 40 ? 20 : 0) +
-        (avgScore < 60 ? 10 : 0);
+     const riskScore =
+  (100 - accuracy) * 0.65;
 
       return {
         ...student,
@@ -1140,37 +1137,55 @@ function buildFacultyInsights(
   );
 
   const subjects =
-    buildSubjectAnalytics(
-      answers,
-      subjectMap
-    );
+  buildSubjectAnalytics(
+    answers,
+    subjectMap
+  );
 
-  if (subjects.length > 0) {
-    const weakestSubject =
-      subjects[0];
+const weakSubjects =
+  subjects.filter(
+    (subject: any) =>
+      subject.accuracy < 100
+  );
 
-    messages.push(
-      `${weakestSubject.name} is the weakest subject at ${weakestSubject.accuracy.toFixed(
-        1
-      )}% accuracy. ${weakestSubject.recommendation} is recommended.`
-    );
-  }
+if (weakSubjects.length > 0) {
+  const weakestSubject =
+    [...weakSubjects].sort(
+      (a: any, b: any) =>
+        a.accuracy - b.accuracy
+    )[0];
 
-  const topics =
-    buildTopicAnalytics(
-      answers
-    );
+  messages.push(
+    `${weakestSubject.name} is the weakest subject at ${weakestSubject.accuracy.toFixed(
+      1
+    )}% accuracy. ${weakestSubject.recommendation} is recommended.`
+  );
+}
 
-  if (topics.length > 0) {
-    const weakestTopic =
-      topics[0];
+ const topics =
+  buildTopicAnalytics(
+    answers
+  );
 
-    messages.push(
-      `${weakestTopic.topic} is the weakest topic at ${weakestTopic.accuracy.toFixed(
-        1
-      )}% accuracy.`
-    );
-  }
+const weakTopics =
+  topics.filter(
+    (topic: any) =>
+      topic.accuracy < 100
+  );
+
+if (weakTopics.length > 0) {
+  const weakestTopic =
+    [...weakTopics].sort(
+      (a: any, b: any) =>
+        a.accuracy - b.accuracy
+    )[0];
+
+  messages.push(
+    `${weakestTopic.topic} is the weakest topic at ${weakestTopic.accuracy.toFixed(
+      1
+    )}% accuracy.`
+  );
+}
 
   const questionInsights =
     buildQuestionInsights(

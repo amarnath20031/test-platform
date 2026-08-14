@@ -80,10 +80,12 @@ export default function TestsPage() {
   }
 
   function getAttempts(testId: string) {
-    return attempts.filter(
-      (a) => a.testId === testId
-    );
-  }
+  return attempts.filter(
+    (a) =>
+      a.testId === testId &&
+      a.isPractice !== true
+  );
+}
 
   function getAverage(testId: string) {
     const list = getAttempts(testId);
@@ -112,20 +114,25 @@ export default function TestsPage() {
   const totalAssignments =
     assignments.length;
 
-  const totalAttempts =
-    attempts.length;
+  const officialAttempts =
+  attempts.filter(
+    (a) => a.isPractice !== true
+  );
 
-  const averageScore =
-    attempts.length === 0
-      ? 0
-      : Math.round(
-          attempts.reduce(
-            (sum, a) =>
-              sum +
-              Number(a.percentage),
-            0
-          ) / attempts.length
-        );
+const totalAttempts =
+  officialAttempts.length;
+
+const averageScore =
+  officialAttempts.length === 0
+    ? 0
+    : Math.round(
+        officialAttempts.reduce(
+          (sum, a) =>
+            sum +
+            Number(a.percentage || 0),
+          0
+        ) / officialAttempts.length
+      );
 
           return (
     <div className="min-h-screen bg-[#050816] text-white p-8">

@@ -50,13 +50,14 @@ const [averageScore, setAverageScore] =
       .eq("testId", id);
 
     setAssignments(assignmentData || []);
-    const { data: attempts } = await supabase
+   const { data: attempts } = await supabase
   .from("Attempt")
   .select(`
     *,
     student:Student(name,email)
   `)
-  .eq("testId", id);
+  .eq("testId", id)
+  .eq("isPractice", false);
 
 setAttempts(attempts || []);
 

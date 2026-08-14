@@ -76,42 +76,48 @@ export default function BatchDetailsPage() {
 
   const totalStudents = students.length;
 
-  const totalAttempts = attempts.length;
+  const officialAttemptList = attempts.filter(
+  (a) => !a.isPractice
+);
 
-  const officialAttempts = attempts.filter(
-    (a) => !a.isPractice
-  ).length;
+const practiceAttemptList = attempts.filter(
+  (a) => a.isPractice
+);
 
-  const practiceAttempts = attempts.filter(
-    (a) => a.isPractice
-  ).length;
+const totalAttempts = officialAttemptList.length;
 
-  const averageScore =
-    attempts.length === 0
-      ? 0
-      : Math.round(
-          attempts.reduce(
-            (sum, a) => sum + Number(a.score),
-            0
-          ) / attempts.length
-        );
+const officialAttempts = officialAttemptList.length;
 
-  const averagePercentage =
-    attempts.length === 0
-      ? 0
-      : Math.round(
-          attempts.reduce(
-            (sum, a) =>
-              sum + Number(a.percentage),
-            0
-          ) / attempts.length
-        );
+const practiceAttempts = practiceAttemptList.length;
 
-  function getStudentAttempts(studentId: string) {
-    return attempts.filter(
-      (a) => a.studentId === studentId
-    );
-  }
+const averageScore =
+  officialAttemptList.length === 0
+    ? 0
+    : Math.round(
+        officialAttemptList.reduce(
+          (sum, a) => sum + Number(a.score || 0),
+          0
+        ) / officialAttemptList.length
+      );
+
+const averagePercentage =
+  officialAttemptList.length === 0
+    ? 0
+    : Math.round(
+        officialAttemptList.reduce(
+          (sum, a) =>
+            sum + Number(a.percentage || 0),
+          0
+        ) / officialAttemptList.length
+      );
+
+ function getStudentAttempts(studentId: string) {
+  return attempts.filter(
+    (a) =>
+      a.studentId === studentId &&
+      !a.isPractice
+  );
+}
 
   function getAverage(studentId: string) {
     const list = getStudentAttempts(studentId);

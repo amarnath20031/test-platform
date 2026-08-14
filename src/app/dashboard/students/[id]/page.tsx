@@ -53,9 +53,10 @@ export default function StudentHistoryPage() {
           )
         `)
         .eq("studentId", studentId)
-        .order("createdAt", {
-          ascending: true,
-        });
+.eq("isPractice", false)
+.order("createdAt", {
+  ascending: true,
+});
 
     if (attemptData) {
       setAttempts(attemptData);
@@ -126,9 +127,10 @@ const strongSubject =
   sortedSubjects[0];
 
 const weakSubject =
-  sortedSubjects[
-    sortedSubjects.length - 1
-  ];
+  sortedSubjects.length > 1 &&
+  sortedSubjects[sortedSubjects.length - 1].percentage < 100
+    ? sortedSubjects[sortedSubjects.length - 1]
+    : undefined;
 
   const totalTests = attempts.length;
 

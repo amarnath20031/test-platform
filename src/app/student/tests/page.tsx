@@ -56,8 +56,7 @@ async function startNewAttempt() {
 
   setShowResumeDialog(false);
 
-  router.replace(`/student/test/${selectedTestId}`);
-  router.refresh();
+  router.replace(`/student/test/${selectedTestId}?newAttempt=1`);
 }
 
   async function loadTests() {
